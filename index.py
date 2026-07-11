@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # يمكنك تشفير أي نص عبر: base64.b64encode("نصك".encode()).decode()
 
 # 1. توكن البوت (مشفّر)
-ENCRYPTED_BOT_TOKEN = "ODYwOTk5NDkyNzpBQUdRTUttZmNjNUY2bHBRSjA1YlYzMzN1YXJDVEVxcjVfTQ=="
+ENCRYPTED_BOT_TOKEN = "ODYwOTk5NDkyNzpBQUdRTUttZmNjNUY2bHBRSjBJOGJWMzMzdWFyQ1RFcXI1X00="
 
 # 2. معرف القناة (مشفّر)
 ENCRYPTED_CHANNEL_ID = "LTEwMDQzNzU2NDE2NzM="
@@ -151,11 +151,11 @@ def get_admin_panel(db):
     ])
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (جميع دوال handle_text من البوت الأساسي)
+    # سيتم إضافة دوال handle_text كاملة من البوت الأساسي
     pass
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (جميع دوال handle_callback من البوت الأساسي)
+    # سيتم إضافة دوال handle_callback كاملة من البوت الأساسي
     pass
 
 # ===================== تشغيل البوت =====================
