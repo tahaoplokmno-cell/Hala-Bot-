@@ -151,12 +151,134 @@ def get_admin_panel(db):
     ])
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # سيتم إضافة دوال handle_text كاملة من البوت الأساسي
-    pass
+    user_id = str(update.effective_user.id)
+    text = update.message.text
+    db = load_db()
+    ud = context.user_data
+
+    if ud.get('awaiting_password'):
+        ud['awaiting_password'] = False
+        if text.strip() == ADMIN_PASSWORD:
+            if user_id not in db['authenticated_admins']:
+                db['authenticated_admins'].append(user_id)
+                save_db(db)
+            await update.message.reply_text("✅ تم التحقق! استخدم /panel للوحة التحكم.")
+        else:
+            await update.message.reply_text("❌ كلمة سر خاطئة!")
+
+    elif text == '📱 الأرقام':
+        await update.message.reply_text("📱 **اختر القسم:**", reply_markup=numbers_menu)
+
+    elif text == '💳 المحفظة':
+        balance = db["users"][user_id]["balance_usd"]
+        await update.message.reply_text(f"💳 **رصيدك الحالي:**\n💰 ${balance:.2f}", reply_markup=wallet_menu)
+
+    elif text == '💰 استرجاع الأموال':
+        await update.message.reply_text("💰 **استرجاع الأموال**\nإذا لم يصل الرقم الذي طلبته، يمكنك طلب استرجاع المبلغ.", reply_markup=CANCEL_BTN)
+
+    elif text == '📞 الدعم الفني':
+        await update.message.reply_text(
+            f"📞 **الدعم الفني**\nللتواصل المباشر: {DEVELOPER_USERNAME}\nأو أرسل شكواك/استفسارك من هنا:",
+            reply_markup=support_menu
+        )
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # سيتم إضافة دوال handle_callback كاملة من البوت الأساسي
-    pass
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = str(update.effective_user.id)
+    db = load_db()
+
+    if data == "whatsapp":
+        await query.edit_message_text(
+            "📱 **أرقام واتساب**\n"
+            "اختر الدولة:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🇸🇦 السعودية", callback_data="saudi")],
+                [InlineKeyboardButton("🇪🇬 مصر", callback_data="egypt")],
+                [InlineKeyboardButton("🔙 رجوع", callback_data="numbers_back")]
+            ])
+        )
+
+    elif data == "telegram":
+        await query.edit_message_text(
+            "📱 **أرقام تيليجرام**\n"
+            "اختر الدولة:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🇸🇦 السعودية", callback_data="tele_saudi")],
+                [InlineKeyboardButton("🇪🇬 مصر", callback_data="tele_egypt")],
+                [InlineKeyboardButton("🔙 رجوع", callback_data="numbers_back")]
+            ])
+        )
+
+    elif data == "saudi":
+        await query.edit_message_text("🇸🇦 **أرقام واتساب السعودية**\nالسعر: 1$ للرقم\nلشراء الرقم، أرسل /buy")
+
+    elif data == "egypt":
+        await query.edit_message_text("🇪🇬 **أرقام واتساب مصر**\nالسعر: 0.5$ للرقم\nلشراء الرقم، أرسل /buy")
+
+    elif data == "tele_saudi":
+        await query.edit_message_text("🇸🇦 **أرقام تيليجرام السعودية**\nالسعر: 1.5$ للرقم\nلشراء الرقم، أرسل /buy")
+
+    elif data == "tele_egypt":
+        await query.edit_message_text("🇪🇬 **أرقام تيليجرام مصر**\nالسعر: 1$ للرقم\nلشراء الرقم، أرسل /buy")
+
+    elif data == "numbers_back":
+        await query.edit_message_text("📱 **اختر القسم:**", reply_markup=numbers_menu)
+
+    elif data == "main_menu":
+        await query.edit_message_text("🔥 **القائمة الرئيسية**", reply_markup=main_menu)
+
+    elif data == "support#start":
+        await query.edit_message_text(
+            f"📞 **الدعم الفني**\nللتواصل: {DEVELOPER_USERNAME}\nأو أرسل شكواك/استفسارك هنا.",
+            reply_markup=CANCEL_BTN
+        )
+
+    elif data == "cancel_flow":
+        await query.edit_message_text("✅ تم إلغاء العملية.", reply_markup=main_menu)
+
+    elif data.startswith("charge#"):
+        currency = data.split('#')[1]
+        await query.edit_message_text(
+            f"💳 **شحن بال{'دولار' if currency == 'usd' else 'ليرة'}**\n"
+            f"📌 رقم شام كاش: `{SYRIA_CASH_NUMBER}`\n"
+            f"👤 الاسم: {SYRIA_CASH_NAME}\n\n"
+            f"📤 أرسل صورة الوصل أو رقم العملية لتأكيد الطلب.",
+            reply_markup=CANCEL_BTN
+        )
+
+    elif data.startswith("adm#"):
+        if not is_admin(db, user_id):
+            await query.edit_message_text("❌ غير مصرح لك.")
+            return
+        action = data.split('#')[1]
+        if action == "stats":
+            total_users = len(db["users"])
+            total_balance = sum(u.get("balance_usd", 0) for u in db["users"].values())
+            await query.edit_message_text(
+                f"📊 **الإحصائيات**\n"
+                f"👥 المستخدمين: {total_users}\n"
+                f"💰 إجمالي الأرصدة: ${total_balance:.2f}\n"
+                f"📦 الطلبات المعلقة: {len(db.get('pending_orders', {}))}"
+            )
+        elif action == "pending_list":
+            orders = db.get("pending_orders", {})
+            if not orders:
+                await query.edit_message_text("📦 لا يوجد طلبات معلقة.")
+                return
+            lines = ["📦 **الطلبات المعلقة:**"]
+            for oid, o in list(orders.items())[:10]:
+                lines.append(f"`{oid}` — {o.get('type')} — {o.get('user_id')}")
+            await query.edit_message_text("\n".join(lines))
+        elif action == "add_product":
+            await query.edit_message_text(
+                "✍️ **إضافة منتج جديد**\n"
+                "استخدم الصيغة:\n"
+                "`parent_id|kind|الاسم|السعر`\n"
+                "مثال: `x1|number|رقم واتساب سعودي|1`",
+                reply_markup=CANCEL_BTN
+            )
 
 # ===================== تشغيل البوت =====================
 def main():
