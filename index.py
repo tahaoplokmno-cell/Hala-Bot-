@@ -118,6 +118,9 @@ async def dm_user(context, chat_id, text, reply_markup=None):
     except Exception as e:
         await notify_admin_dm(context, f"⚠️ تعذر إرسال رسالة للمستخدم `{chat_id}`.\nالسبب: {e}\n\nنص الرسالة:\n{text}")
         return False
+
+
+async def notify_channel(context, text=None, photo=None, reply_markup=None):
     """يرسل إشعاراً لقناة الإدارة. إن فشل (البوت ليس أدمن بالقناة، أو المعرف خاطئ)
     يرسله لخاص الأدمن كبديل حتى لا يضيع الطلب، ويبلغ الأدمن بسبب الخطأ."""
     try:
@@ -1208,4 +1211,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
