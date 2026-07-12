@@ -3,7 +3,7 @@ import random
 import re
 import string
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, BufferedInputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # ===================== إعدادات البوت (عدلها هنا) =====================
@@ -108,6 +108,40 @@ async def notify_admin_dm(context, text, markup=None):
         await context.bot.send_message(ADMIN_ID, text, reply_markup=markup)
     except Exception:
         pass
+
+
+async def dm_user(context, chat_id, text, reply_markup=None):
+    """يرسل رسالة لزبون بأمان. إن فشل (حظر البوت، آيدي خاطئ...) يبلغ الأدمن بدل ما يوقف البوت."""
+    try:
+        await context.bot.send_message(chat_id, text, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        await notify_admin_dm(context, f"⚠️ تعذر إرسال رسالة للمستخدم `{chat_id}`.\nالسبب: {e}\n\nنص الرسالة:\n{text}")
+        return False
+    """يرسل إشعاراً لقناة الإدارة. إن فشل (البوت ليس أدمن بالقناة، أو المعرف خاطئ)
+    يرسله لخاص الأدمن كبديل حتى لا يضيع الطلب، ويبلغ الأدمن بسبب الخطأ."""
+    try:
+        if photo:
+            await context.bot.send_photo(ADMIN_CHANNEL_ID, photo, caption=text, reply_markup=reply_markup)
+        else:
+            await context.bot.send_message(ADMIN_CHANNEL_ID, text, reply_markup=reply_markup)
+        return True
+    except Exception as e:
+        fallback_text = (text or "") + "\n\n⚠️ (وصل هنا لأن الإرسال لقناة الإدارة فشل)"
+        try:
+            if photo:
+                await context.bot.send_photo(ADMIN_ID, photo, caption=fallback_text, reply_markup=reply_markup)
+            else:
+                await context.bot.send_message(ADMIN_ID, fallback_text, reply_markup=reply_markup)
+        except Exception:
+            pass
+        await notify_admin_dm(
+            context,
+            f"⚠️ تعذر الإرسال لقناة الإدارة (ADMIN_CHANNEL_ID = {ADMIN_CHANNEL_ID}).\n"
+            f"تحقق من: 1) أن البوت مُضاف كأدمن بالقناة وله صلاحية نشر الرسائل. "
+            f"2) أن المعرف صحيح (يبدأ عادة بـ -100).\nنص الخطأ: {e}"
+        )
+        return False
 
 
 # ===================== القوائم والأزرار =====================
@@ -336,14 +370,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_activity(db, f"شكوى جديدة من {user_id}")
         save_db(db)
         name = safe_md(update.effective_user.first_name)
-        try:
-            await context.bot.send_message(
-                ADMIN_CHANNEL_ID,
-                f"📩 شكوى / استفسار جديد\n━━━━━━━━━━━━━━━━━━━━\n👤 {name}\n🆔 {user_id}\n\n📝 {safe_md(text)}",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ الرد على الزبون", callback_data=f"reply_user#{user_id}")]])
-            )
-        except Exception:
-            pass
+        await notify_channel(
+            context,
+            text=f"📩 شكوى / استفسار جديد\n━━━━━━━━━━━━━━━━━━━━\n👤 {name}\n🆔 {user_id}\n\n📝 {safe_md(text)}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ الرد على الزبون", callback_data=f"reply_user#{user_id}")]])
+        )
         await update.message.reply_text("✅ تم استلام رسالتك وسيتم الرد عليك بأقرب وقت ممكن 🙏")
         return
 
@@ -351,7 +382,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_id = ud.get('reply_target_id')
         ud['awaiting_reply_to_user'] = False
         try:
-            await context.bot.send_message(target_id, f"💬 رد الدعم الفني:\n{text}")
+            await dm_user(context, target_id, f"💬 رد الدعم الفني:\n{text}")
             await update.message.reply_text(f"✅ تم إرسال الرد إلى {target_id}")
         except Exception as e:
             await update.message.reply_text(f"❌ فشل إرسال الرد: {e}")
@@ -394,10 +425,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_db(db)
         name = safe_md(update.effective_user.first_name)
-        await context.bot.send_message(
-            ADMIN_CHANNEL_ID,
-            f"🏦 طلب شحن رصيد (برقم العملية)\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
-            f"👤 {name}\n🆔 {user_id}\n💰 {amount_syp:,.0f} ل.س = {usd_amount:.2f}$\n🧾 المرجع: {safe_md(text)}",
+        await notify_channel(
+            context,
+            text=f"🏦 طلب شحن رصيد (برقم العملية)\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
+                 f"👤 {name}\n🆔 {user_id}\n💰 {amount_syp:,.0f} ل.س = {usd_amount:.2f}$\n🧾 المرجع: {safe_md(text)}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ قبول وإضافة الرصيد", callback_data=f"charge_ok#{order_id}")],
                 [InlineKeyboardButton("❌ رفض", callback_data=f"charge_no#{order_id}")]
@@ -442,7 +473,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count = 0
         for uid in db["users"]:
             try:
-                await context.bot.send_message(uid, f"📢 إعلان عام\n━━━━━━━━━━━━━━━━━━━━\n{text}")
+                await dm_user(context, uid, f"📢 إعلان عام\n━━━━━━━━━━━━━━━━━━━━\n{text}")
                 count += 1
             except Exception:
                 pass
@@ -459,7 +490,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_activity(db, f"إضافة يدوية {amount}$ لـ {target_id}")
             save_db(db)
             await update.message.reply_text(f"✅ تم إضافة {amount}$ إلى {db['users'][target_id]['name']}")
-            await context.bot.send_message(target_id, f"🎉 تم إضافة {amount}$ إلى محفظتك!")
+            await dm_user(context, target_id, f"🎉 تم إضافة {amount}$ إلى محفظتك!")
         except Exception:
             await update.message.reply_text("❌ الصيغة غير صحيحة! استخدم: `آيدي|المبلغ`", parse_mode='Markdown', reply_markup=CANCEL_BTN)
             return
@@ -476,7 +507,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_activity(db, f"خصم يدوي {amount}$ من {target_id}")
             save_db(db)
             await update.message.reply_text(f"✅ تم خصم {amount}$ من {db['users'][target_id]['name']}")
-            await context.bot.send_message(target_id, f"⚠️ تم خصم {amount}$ من محفظتك من قبل الإدارة.")
+            await dm_user(context, target_id, f"⚠️ تم خصم {amount}$ من محفظتك من قبل الإدارة.")
         except Exception:
             await update.message.reply_text("❌ الصيغة غير صحيحة! استخدم: `آيدي|المبلغ`", parse_mode='Markdown', reply_markup=CANCEL_BTN)
             return
@@ -702,10 +733,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
         photo_id = update.message.photo[-1].file_id
         name = safe_md(update.effective_user.first_name)
-        await context.bot.send_photo(
-            ADMIN_CHANNEL_ID, photo_id,
-            caption=(f"🏦 طلب شحن رصيد\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
-                     f"👤 {name}\n🆔 {user_id}\n💰 {amount_syp:,.0f} ل.س = {usd_amount:.2f}$"),
+        await notify_channel(
+            context, photo=photo_id,
+            text=(f"🏦 طلب شحن رصيد\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
+                  f"👤 {name}\n🆔 {user_id}\n💰 {amount_syp:,.0f} ل.س = {usd_amount:.2f}$"),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ قبول وإضافة الرصيد", callback_data=f"charge_ok#{order_id}")],
                 [InlineKeyboardButton("❌ رفض", callback_data=f"charge_no#{order_id}")]
@@ -799,10 +830,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_db(db)
         name = safe_md(update.effective_user.first_name)
-        await context.bot.send_message(
-            ADMIN_CHANNEL_ID,
-            f"🛒 طلب شراء جديد\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
-            f"👤 {name}\n🆔 {user_id}\n🎁 {node['name']}\n💰 {node['price']}$",
+        await notify_channel(
+            context,
+            text=f"🛒 طلب شراء جديد\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
+                 f"👤 {name}\n🆔 {user_id}\n🎁 {node['name']}\n💰 {node['price']}$",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ موافقة وخصم", callback_data=f"order_ok#{order_id}")],
                 [InlineKeyboardButton("❌ رفض", callback_data=f"order_no#{order_id}")]
@@ -843,7 +874,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
         await query.edit_message_text(f"❌ تم رفض الطلب (رقم {order_id})")
         if order:
-            await context.bot.send_message(order['user_id'], f"❌ عذراً، تم رفض طلبك (رقم {order_id}).")
+            await dm_user(context, order['user_id'], f"❌ عذراً، تم رفض طلبك (رقم {order_id}).")
         return
 
     # ---------- شحن الرصيد ----------
@@ -867,7 +898,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_activity(db, f"إيداع #{order_id} لـ {order['user_id']} بقيمة {order['usd_amount']:.2f}$")
         save_db(db)
         await query.edit_message_text(f"✅ تم قبول الشحن (رقم {order_id}) وإضافة {order['usd_amount']:.2f}$")
-        await context.bot.send_message(order['user_id'], f"✅ تم شحن {order['usd_amount']:.2f}$ إلى محفظتك (رقم {order_id}).")
+        await dm_user(context, order['user_id'], f"✅ تم شحن {order['usd_amount']:.2f}$ إلى محفظتك (رقم {order_id}).")
         return
 
     if data.startswith("charge_no#"):
@@ -879,7 +910,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
         await query.edit_message_text(f"❌ تم رفض طلب الشحن (رقم {order_id})")
         if order:
-            await context.bot.send_message(order['user_id'], f"❌ عذراً، تم رفض طلب الشحن (رقم {order_id}). تأكد من صحة إثبات الدفع.")
+            await dm_user(context, order['user_id'], f"❌ عذراً، تم رفض طلب الشحن (رقم {order_id}). تأكد من صحة إثبات الدفع.")
         return
 
     # ---------- استرجاع الأموال ----------
@@ -896,10 +927,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db['pending_orders'][order_id] = {"type": "refund", "user_id": user_id, "amount": amount}
         save_db(db)
         name = safe_md(update.effective_user.first_name)
-        await context.bot.send_message(
-            ADMIN_CHANNEL_ID,
-            f"💰 طلب استرجاع أموال\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
-            f"👤 {name}\n🆔 {user_id}\n💵 المبلغ: {amount:.2f}$",
+        await notify_channel(
+            context,
+            text=f"💰 طلب استرجاع أموال\n━━━━━━━━━━━━━━━━━━━━\n📋 رقم الطلب: {order_id}\n"
+                 f"👤 {name}\n🆔 {user_id}\n💵 المبلغ: {amount:.2f}$",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ موافقة", callback_data=f"refund_ok#{order_id}")],
                 [InlineKeyboardButton("❌ رفض", callback_data=f"refund_no#{order_id}")]
@@ -922,7 +953,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_activity(db, f"استرجاع #{order_id} لـ {order['user_id']} بقيمة {order['amount']:.2f}$")
         save_db(db)
         await query.edit_message_text(f"✅ تم قبول الاسترجاع (رقم {order_id}) وخصم {order['amount']:.2f}$")
-        await context.bot.send_message(order['user_id'], f"✅ تم قبول استرجاع {order['amount']:.2f}$ وسيتم تحويلها لك قريباً (رقم {order_id}).")
+        await dm_user(context, order['user_id'], f"✅ تم قبول استرجاع {order['amount']:.2f}$ وسيتم تحويلها لك قريباً (رقم {order_id}).")
         return
 
     if data.startswith("refund_no#"):
@@ -934,7 +965,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
         await query.edit_message_text(f"❌ تم رفض طلب الاسترجاع (رقم {order_id})")
         if order:
-            await context.bot.send_message(order['user_id'], f"❌ عذراً، تم رفض طلب استرجاع الأموال (رقم {order_id}).")
+            await dm_user(context, order['user_id'], f"❌ عذراً، تم رفض طلب استرجاع الأموال (رقم {order_id}).")
         return
 
     # ---------- الدعم ----------
@@ -1152,7 +1183,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("💾 تم إنشاء نسخة احتياطية.")
             await context.bot.send_document(
                 chat_id=user_id,
-                document=BufferedInputFile(backup_data.encode('utf-8'), filename='database_backup.json'),
+                document=InputFile(backup_data.encode('utf-8'), filename='database_backup.json'),
                 caption="📂 نسخة احتياطية")
             return
 
